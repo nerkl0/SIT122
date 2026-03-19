@@ -35,11 +35,11 @@ void move(int direction, int speed)
 		leftSpeed = -speed * CALIBRATION;
 		rightSpeed = speed;
 		break;
-  	case 3:
+  case 3:
 		leftSpeed = -speed * CALIBRATION;
 		rightSpeed = -speed;
 		break;
-  	case 4:
+  case 4:
 		leftSpeed = speed * CALIBRATION;
 		rightSpeed = speed;
 		break;
@@ -60,7 +60,6 @@ void toggle_LED(int colour){
 
 void setup() {
   rgb_led.setpin(44);
-  rgb_led.fillPixelsBak(0, 2, 1);
 
   TCCR1A = _BV(WGM10);
   TCCR1B = _BV(CS11) | _BV(WGM12);
