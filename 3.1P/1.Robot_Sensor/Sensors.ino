@@ -25,18 +25,24 @@ void move(int direction, int speed)
 {
   int leftSpeed = 0; 
   int rightSpeed = 0;
-  if(direction == 1){
-    leftSpeed = speed * CALIBRATION;
-    rightSpeed = -speed;
-  } else if (direction == 2){
-    leftSpeed = -speed * CALIBRATION;
-    rightSpeed = speed;
-  } else if (direction == 3){
-    leftSpeed = -speed * CALIBRATION;
-    rightSpeed = -speed;
-  } else if (direction == 4){
-    leftSpeed = speed * CALIBRATION;
-    rightSpeed = speed;
+
+  switch(direction){
+	case 1:
+		leftSpeed = speed * CALIBRATION;
+		rightSpeed = -speed;
+		break;
+	case 2:
+		leftSpeed = -speed * CALIBRATION;
+		rightSpeed = speed;
+		break;
+  	case 3:
+		leftSpeed = -speed * CALIBRATION;
+		rightSpeed = -speed;
+		break;
+  	case 4:
+		leftSpeed = speed * CALIBRATION;
+		rightSpeed = speed;
+		break;
   }
 
   motor_r.setTarPWM(rightSpeed);
@@ -68,11 +74,11 @@ void setup() {
 void loop() {
   _loop();
 
-  if (ultrasonic_sensor.distanceCm() < 30) {
-    move(3, 200);
+  if (ultrasonic_sensor.distanceCm() < 20) {
+    move(1, 0);
     toggle_LED(1);
   } else {
-    move(1, 120);
+    move(1, 150);
     toggle_LED(2);
   }
 }
