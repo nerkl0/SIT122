@@ -10,10 +10,10 @@ const int LIGHT_TOLERANCE = 30;
 enum State { TURN, DRIVE, STOP };
 State state = STOP;
 int turnDirection = 0;
-int previousLight = -1;
+int previousLight = -1; // variable to calculate ranger to stop once at light source
 
 unsigned long lastDelayTime = 0;
-
+// non blocking delay for motors to continue running 
 void _delay(int ms){
   while(millis() - lastDelayTime < ms){
     _loop();
@@ -39,6 +39,9 @@ void loop() {
   int sensor2 = lightSensor2.read();
   int lightImbalance = sensor1 - sensor2;
 
+  // check light imbalance & drive towards souce of light. 
+  // Triggers DRIVE if lightImbalance is within the light_tolerance range
+  // DRIVE will then check whether the light imbalance has changed triggering TURN
   if (abs(lightImbalance) <= LIGHT_TOLERANCE) {
     previousLight = sensor1 + sensor2;
     stopMotors();
@@ -47,7 +50,7 @@ void loop() {
 
   switch (state) {
     case TURN:
-      turnDirection = lightImbalance > 0 ? 4 : 3;
+      turnDirection = lightImbalance > 0 ? 4 : 3; // sets left / right turn
       move(turnDirection, SPEED*1.75);
       break;
 
@@ -58,10 +61,10 @@ void loop() {
         move(1, SPEED);
         _delay(100);
         
+        // rechecks sensors and compares against the previous light level
+        // if detected to be moving away from the light source will stop
         int current = lightSensor1.read() + lightSensor2.read();
-        if (previousLight == -1) {
-          previousLight = current;
-        } else if (current < previousLight) {
+        if (current < previousLight){
           stopMotors();
           state = STOP;
         } else {
