@@ -12,13 +12,13 @@ State state = STOP;
 int turnDirection = 0;
 int previousLight = -1; // variable to calculate ranger to stop once at light source
 
-unsigned long lastDelayTime = 0;
-// non blocking delay for motors to continue running 
-void _delay(int ms){
-  while(millis() - lastDelayTime < ms){
-    _loop();
+// non blocking delay for motors to continue running via _loop()
+void _delay(float seconds) {
+  if(seconds < 0.0){
+    seconds = 0.0; 
   }
-  lastDelayTime = millis();
+  long endTime = millis() + seconds * 1000;
+  while(millis() < endTime) _loop();
 }
 
 void setup() {
@@ -44,7 +44,6 @@ void loop() {
   // DRIVE will then check whether the light imbalance has changed triggering TURN
   if (abs(lightImbalance) <= LIGHT_TOLERANCE) {
     previousLight = sensor1 + sensor2;
-    stopMotors();
     state = DRIVE;
   }
 
@@ -54,28 +53,26 @@ void loop() {
       move(turnDirection, SPEED*1.75);
       break;
 
-    case DRIVE:
+    case DRIVE:{
       if (abs(lightImbalance) > LIGHT_TOLERANCE) {
         state = TURN;
       } else {
         move(1, SPEED);
-        _delay(100);
+        _delay(0.4);
         
         // rechecks sensors and compares against the previous light level
         // if detected to be moving away from the light source will stop
         int current = lightSensor1.read() + lightSensor2.read();
-        if (current < previousLight){
-          stopMotors();
+        if (current < previousLight)
           state = STOP;
-        } else {
+        else
           previousLight = current;
         }
-      }
       break;
-
+    }
     case STOP:
       stopMotors();
-      _delay(500);
+      _delay(0.5);
       break;
   }
 }
