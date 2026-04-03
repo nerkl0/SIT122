@@ -51,15 +51,18 @@ void loop() {
   switch (state) {
     // Decides which direction to turn by evaluating whether the imbalance is coming from
     // the left or right sensor. Continues turning until it's detected the source of the light
-    case TURN:
+    case TURN: {
       int turnDirection = lightImbalance > 0 ? 4 : 3;
       while (abs(lightImbalance) > LIGHT_TOLERANCE) {
         move(turnDirection, TURN_SPEED);
         _loop();
         readSensors();
       }
+      
+      previousLight = sensor1 + sensor2;
+      state = DRIVE;
       break;
-
+    }
     // Handles moving towards the light. Current and previous light detect whether the light source has been passed 
     // If current light is less than the previous, it means the light source has been found and the robot stops moving
     // If an imbalance is detected, indicates the light source has moved, state set to STOP
