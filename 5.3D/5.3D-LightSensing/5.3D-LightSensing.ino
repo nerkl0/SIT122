@@ -86,12 +86,8 @@ void readSensors() {
 }
 
 // returns boolean value to indicate whether an obstacle has been detected
-bool checkObstacle(int distance){
-  if (ultrasonic_sensor.distanceCm() < distance) {
-      state = AVOID;
-      return true;
-  }
-  return false; 
+bool obstacleDetected(int distance) {
+  return ultrasonic_sensor.distanceCm() < distance;
 }
 
 void setup() {
@@ -118,25 +114,22 @@ void loop() {
 
   switch (state) {
     
-    // Reverses slightly from the obstacle, turns one direction. If obstacle found after turning, will turn in the opposite direction
+    // Reverses slightly from the obstacle, turns toward the direction of the light. 
     // If it frees iteself in less than the set attempts, state set to TURN, else state set to STOP
     case AVOID:{
       int attempts = OBSTACLE_ATTEMPTS;
-      while (checkObstacle(20) && attempts >= 0) {
+      int turnDirection = lightImbalance > 0 ? 4 : 3;
+      while (obstacleDetected(20) && attempts > 0) {
         move(2, SPEED/2);
         _delay(1);
-        move(3, TURN_SPEED);
+        move(turnDirection, TURN_SPEED);
         _delay(0.4);
-        if (checkObstacle(20)) {
-            move(4, TURN_SPEED);
-            _delay(0.4);
-        }
         attempts--; 
       }
-      state = checkObstacle(20) ? STOP : TURN;
+      state = obstacleDetected(20) ? STOP : TURN;
       break; 
     }
-    
+
     // Decides which direction to turn by evaluating whether the imbalance is coming from
     // the left or right sensor. Continues turning until it's detected the source of the light
     // Will break out early if an obstacle has been detected
@@ -149,8 +142,10 @@ void loop() {
         _loop();
         readSensors();
         
-        if(checkObstacle(20))
+        if(obstacleDetected(20)){
+          state = AVOID; 
           break;
+        }
       }
       if (state != AVOID) {
           previousLight = sensor1 + sensor2;
@@ -168,12 +163,14 @@ void loop() {
       _delay(0.5);
       readSensors();
      
-      if(checkObstacle(20))
-        break; 
+      if(obstacleDetected(20)){
+        state = AVOID; 
+        break;
+      }
 
       int current = sensor1 + sensor2;
       if (abs(lightImbalance) > LIGHT_TOLERANCE) state = TURN;
-      else if (current < previousLight) state = STOP;
+      else if (current <= previousLight) state = STOP;
       else previousLight = current;
 
       break;
