@@ -6,7 +6,7 @@ MeEncoderOnBoard motor_l(SLOT2);
 MeRGBLed led(0,12);
 
 // Wheel setup
-const float WHEEL_DIAMETER = 10.0;
+const float WHEEL_DIAMETER = 6.9;
 const float WHEEL_CIRCUMFERENCE = PI * WHEEL_DIAMETER; 
 const float PULSES_PER_REV = 370;
 const float PULSES = PULSES_PER_REV / WHEEL_CIRCUMFERENCE;
