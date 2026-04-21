@@ -47,6 +47,11 @@ void stop(){
   motor_l.setTarPWM(0);
 }
 
+/*
+  Handles Forward/Backwards direction of the mBot
+  target: the distance in cms multiplied by the number of pulses in a single revolution
+  sets current position then continuously compares current position while moving, once target has been reached, stopMotors 
+*/
 void moveBot(int direction, float dist, float rpm){
   long target = dist * PULSES;
   
@@ -58,12 +63,17 @@ void moveBot(int direction, float dist, float rpm){
 
   // pause briefly to give a chance for motors to complete their movement
   long startPos = motor_r.getCurPos();
-  while (abs(motor_r.getCurPos() - startPos) < (long)target) {
+  while (abs(motor_r.getCurPos() - startPos) < target) {
     _loop();
   }
   stop();
 }
 
+/*
+  If power is true: Randomised LED colours and the LED to light up 
+  (Further implementation would store an array of already lit LEDs so random() to avoid the same LED num returning twice if already on)
+  if power = false, LEDs are switched off 
+*/
 void setLED(bool power){
   if (power) {
     uint8_t r = random(0, 256);
@@ -79,6 +89,7 @@ void setLED(bool power){
   led.show();
 }
 
+// Moves robot forward then backward
 void cycle(int speed, int pause){
   setLED(true);
   moveBot(FORWARD, DISTANCE, speed);
