@@ -1,21 +1,26 @@
 #include <Arduino.h>
 #include <MeAuriga.h>
 
-MeGyro gyro_0(0, 0x69);
 MeEncoderOnBoard Encoder_1(SLOT1);
 MeEncoderOnBoard Encoder_2(SLOT2);
 MeRGBLed led(0,12);
 
-const float CALIBRATION = 114.0 / 128.0;
+const float WHEEL_DIAMETER = 7.0;
+const float WHEEL_CIRCUMFERENCE = PI * WHEEL_DIAMETER;
+const float WHEEL_DISTANCE = 13.4;
+const float TURN_CIRCUMFERENCE = WHEEL_DISTANCE * PI;
+const float PULSES_PER_REV = 370;
+
+const float CALIBRATION = 114.0 / 132.0;
+const float CALIBRATION_CW = 116.0 / 132.0;
 
 const int CLOCKWISE = 3; 
 const int ANTICLOCKWISE = 4; 
 
-const int RPM_SLOW = 100;
-const int RPM_FAST = 160;
-const int DEGREE = 55; 
-
-const int FAST_DEGREE = 40;
+const int RPM_SLOW = 132;
+const int RPM_FAST = 180;
+const int DEGREE_SLOW = 134;
+const int DEGREE_FAST = 140;
 
 void isr_process_encoder1(void)
 {
@@ -29,6 +34,7 @@ void isr_process_encoder2(void)
   else Encoder_2.pulsePosPlus();
 }
 
+// Non-blocking delay for encoder motors
 void _delay(float seconds)
 {
   if (seconds < 0.0) seconds = 0.0;
@@ -36,6 +42,11 @@ void _delay(float seconds)
   while (millis() < endTime) _loop();
 }
 
+/*
+  If power is true: Randomised LED colours and the LED to light up 
+  (Further implementation would store an array of already lit LEDs so random() to avoid the same LED num returning twice if already on)
+  if power = false, LEDs are switched off 
+*/
 void setLED(bool power){
   if (power) {
     uint8_t r = random(0, 256);
@@ -53,30 +64,58 @@ void setLED(bool power){
 
 void stopMotors()
 {
-  Encoder_1.setTarPWM(0);
-  Encoder_2.setTarPWM(0);
+  Encoder_1.setMotorPwm(0);
+  Encoder_2.setMotorPwm(0);
   _delay(1);
 }
 
+/*
+  Handles robot turning using motorPwm.
+  wheelArc: fraction of entire turning circle; pulses: number of pulses in the turn based on the degree
+  direction: determines CLOCKWISE or ANTICLOCKWISE for leftPower / rightPower
+  While loop triggers motor turn stopping once the current position of the robot is less than the pulses
+*/
 void turnBot(int direction, float targetAngle, int speed)
 {
-  float startAngle = gyro_0.getAngle(3);
+  float wheelArc = (targetAngle / 360) * TURN_CIRCUMFERENCE;
+  float pulses = (wheelArc / WHEEL_CIRCUMFERENCE) * PULSES_PER_REV;
 
-  int leftPower = (direction == CLOCKWISE) ? speed * CALIBRATION: -speed *CALIBRATION;
+  float startL = Encoder_1.getCurPos();
+  float startR = Encoder_2.getCurPos();
+
+  int leftPower = (direction == CLOCKWISE) ? speed * CALIBRATION_CW : -speed * CALIBRATION;
   int rightPower = (direction == CLOCKWISE) ? speed: -speed;
  
-  Encoder_1.setTarPWM(leftPower);
-  Encoder_2.setTarPWM(rightPower);
+  Encoder_1.setMotorPwm(leftPower);
+  Encoder_2.setMotorPwm(rightPower);
 
-  while (abs(gyro_0.getAngle(3) - startAngle) < targetAngle) {
+  while (abs(Encoder_1.getCurPos() - startL) < pulses || abs(Encoder_2.getCurPos() - startR) < pulses)
     _loop();
-  }
+
   stopMotors();
+}
+
+/* 
+  Turns robot 4 times within the set direction
+  Turns on another LED for each turn
+  As the loop exists, the LEDs are switched off to indicate cycle finished
+*/
+void cycle(int direction, int speed){
+  int rpm = speed == 1 ? RPM_SLOW : RPM_FAST;
+  int degree = rpm == RPM_SLOW ? DEGREE_SLOW : DEGREE_FAST;
+
+  setLED(true);
+  for(int i = 0; i < 4; i++){
+    turnBot(direction, degree, rpm);
+    setLED(true);
+  }
+  setLED(false);
+
+  _delay(1);
 }
 
 void setup()
 {
-  gyro_0.begin();
   led.setpin(44);
   led.show();   
   TCCR1A = _BV(WGM10);
@@ -90,47 +129,16 @@ void setup()
 
 void _loop()
 {
-  gyro_0.update();
   Encoder_1.loop();
   Encoder_2.loop();
 }
 
 void loop()
 {
-  setLED(true);
-  for(int i = 0; i < 4; i++){
-    turnBot(CLOCKWISE, DEGREE, RPM_SLOW);
-    setLED(true);
-  }
-  setLED(false);
-
   _delay(1);
 
-  setLED(true);
-  for(int i = 0; i < 4; i++){
-    turnBot(ANTICLOCKWISE, DEGREE, RPM_SLOW);
-    setLED(true);
-  }
-  setLED(false);
-
-  _delay(1);
-
-  setLED(true);
-  for(int i = 0; i < 4; i++){
-    turnBot(CLOCKWISE, FAST_DEGREE, RPM_FAST);
-    setLED(true);
-  }
-  setLED(false);
-
-  _delay(1);
-
-  setLED(true);
-  for(int i = 0; i < 4; i++){
-    turnBot(ANTICLOCKWISE, FAST_DEGREE, RPM_FAST);
-    setLED(true);
-  }
-  setLED(false);
-
-  _delay(1);
-
+  cycle(CLOCKWISE, 1); // slow
+  cycle(ANTICLOCKWISE, 1); // slow
+  cycle(CLOCKWISE, 2); // fast
+  cycle(ANTICLOCKWISE, 2); // fast
 }
