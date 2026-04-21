@@ -102,8 +102,8 @@ void moveBot(int direction, float dist, float speed){
 */
 void turnBot(int direction, float targetAngle, int speed)
 {
-  float wheelArc = (targetAngle / 360) * TURN_CIRCUMFERENCE;
-  float pulses = (wheelArc / WHEEL_CIRCUMFERENCE) * PULSES_PER_REV;
+  float wheelArc = (targetAngle / 360.0) * TURN_CIRCUMFERENCE;
+  float target = wheelArc * PULSES;
 
   float startL = Encoder_1.getCurPos();
   float startR = Encoder_2.getCurPos();
@@ -114,7 +114,7 @@ void turnBot(int direction, float targetAngle, int speed)
   Encoder_1.setMotorPwm(leftPower);
   Encoder_2.setMotorPwm(rightPower);
 
-  while (abs(Encoder_1.getCurPos() - startL) < pulses || abs(Encoder_2.getCurPos() - startR) < pulses)
+  while (abs(Encoder_1.getCurPos() - startL) < target || abs(Encoder_2.getCurPos() - startR) < target)
     _loop();
 
   stopMotors();
