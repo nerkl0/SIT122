@@ -4,11 +4,9 @@
 MeUltrasonicSensor ultrasonic_sensor(10);
 MeEncoderOnBoard motor_r(SLOT1);
 MeEncoderOnBoard motor_l(SLOT2);
+MeRGBLed LEDs(0, 12);
 
-const int SPEED = 140;
-const int FORWARD = 1;
-const float CALIBRATION = 116.0 / 128.0;
-
+const int SPEED = 120;
 const float SETPOINT = 10.0; 
 
 enum State { OFF, ON };
@@ -31,16 +29,26 @@ void _delay(float seconds){
   while (millis() < endTime) _loop();
 }
 
-void stopMotors(){
-  motor_l.setMotorPwm(0);
-  motor_r.setMotorPwm(0);
-  _delay(1);
+// Powers wheel motors motors
+void moveBotTo(int speed){
+  motor_l.setMotorPwm(speed * 1.2);
+  motor_r.setMotorPwm(-speed);
 }
 
-// Powers wheel motors motors
-void moveBot(int direction, float speed){
-  motor_l.setMotorPwm(SPEED);
-  motor_r.setMotorPwm(-SPEED * CALIBRATION);
+void moveBotAway(int speed){
+  motor_l.setMotorPwm(speed);
+  motor_r.setMotorPwm(-speed * 1.4);
+}
+
+void setLED(int colour){
+  if (colour == 1)
+    LEDs.setColor(3,255,0,0); // red
+  else if (colour == 2)
+    LEDs.setColor(3,0,255,0); // green
+  else 
+    LEDs.setColor(3,0,0,0); // cyan
+
+  LEDs.show();
 }
 
 void _loop()
@@ -50,6 +58,9 @@ void _loop()
 }
 
 void setup() {
+  LEDs.setpin(44);
+  LEDs.show();
+
   TCCR1A = _BV(WGM10);
   TCCR1B = _BV(CS11) | _BV(WGM12);
   TCCR2A = _BV(WGM21) | _BV(WGM20);
@@ -71,8 +82,8 @@ void loop() {
 
   switch (mBotState) {
     case ON: 
-      moveBot(FORWARD, SPEED); break;
+      moveBotAway(SPEED); setLED(1); break;
     case OFF: 
-      stopMotors(); break;
+      moveBotTo(SPEED); setLED(2); break;
   }
 }
