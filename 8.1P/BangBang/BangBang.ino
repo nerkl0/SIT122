@@ -72,7 +72,7 @@ void setup() {
 
 /*
   Calculates the distance held between SETPOINT and mBot.
-  If > 0, move along the wall. If <= 0 robot stops, the wall is too far to detect
+  If > 0, move away from the wall. If <= 0 move towards the wall
 */
 void loop() {
   _loop();
