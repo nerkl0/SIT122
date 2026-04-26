@@ -17,10 +17,13 @@ const float WALL_SETPOINT = 15.0;
 const float MAX_WALL_SETPOINT = 30.0;
 const float OBSTACLE_DISTANCE = 20.0;
 const float OBSTACLE_MIN_DISTANCE = 10.0;
+
 const float TURN_ANGLE = 75; 
 const float TURN_SPEED = SPEED * 0.5;
+const float VEER = 0.7;
 
 const float BUZZ_FREQ = 440; 
+const int LED_PIN = 3; 
 
 enum Direction { CLOCKWISE, ANTICLOCKWISE };
 enum LEDColour { OFF, ORANGE, PINK, BLUE, RED, GREEN };
@@ -47,26 +50,26 @@ void _delay(float seconds) {
   long endTime = millis() + seconds * 1000;
   while(millis() < endTime) _loop();
 }
-\
 
+// Set LED in set colours listed in LED enum
 void setLED(LEDColour colour){
   if (colour == ORANGE)
-    LEDs.setColor(3,255,154,0);
+    LEDs.setColor(LED_PIN,255,154,0);
   else if (colour == PINK)
-    LEDs.setColor(3,228,81,203);
+    LEDs.setColor(LED_PIN,228,81,203);
   else if (colour == BLUE)
-    LEDs.setColor(3,0,51,255);
+    LEDs.setColor(LED_PIN,0,51,255);
   else if (colour == RED)
-    LEDs.setColor(3,255,25,0);
+    LEDs.setColor(LED_PIN,255,25,0);
   else if (colour == GREEN)
-    LEDs.setColor(3,0,255,0);
+    LEDs.setColor(LED_PIN,0,255,0);
   else 
-    LEDs.setColor(3,0,0,0);
+    LEDs.setColor(LED_PIN,0,0,0);
   LEDs.show();
 }
 
 /*
-  Function to call to stop motors
+  Handles stopping motors
 */
 void stopBot(){
   motor_l.setMotorPwm(0);
@@ -77,7 +80,7 @@ void stopBot(){
 /*
   Controls turning the mBot using the gyroscope
   direction is enum of CLOCKWISE, ANTICLOCKWISE
-  targetAngle is degree to turn
+  targetAngle is degree to turn in the set direction
 */
 void turnBot(Direction direction, float targetAngle, int speed)
 {
@@ -145,7 +148,9 @@ void loop() {
     }
 
     /*
-          
+      State: FIND
+      While the wall is further away then the maximum wall setpoint, the robot veers slightly towards the wall
+      Once side sensor is back within distance, the state returns to FOLLOW the wall
     */
     case FIND: {
       setLED(BLUE);
@@ -159,14 +164,20 @@ void loop() {
         }      
 
         motor_l.setMotorPwm(SPEED);
-        motor_r.setMotorPwm(-SPEED * 0.7);
+        motor_r.setMotorPwm(-SPEED * VEER);
       }
       mBotState = FOLLOW;
       break;
     }
 
-
+    /*
+      State: FOLLOW
+      Maintains a level distance from a wall on the right of the robot using P-Controller functionality. 
+      If the robot is too far away, LED will be orange as it angles back towards the wall. 
+      LED is pink if it's angling away from the wall 
+    */
     case FOLLOW:{
+      // Checks for obstacles, if found update state -> AVOID
       if (sensor_front.distanceCm() < OBSTACLE_DISTANCE){
         stopBot();
         mBotState = AVOID;
@@ -186,12 +197,17 @@ void loop() {
       motor_l.setMotorPwm((SPEED - correction) * CALIBRATION);
       motor_r.setMotorPwm(-( SPEED + correction));
 
-      if (error > 0)
-        setLED(PINK);
-      else if (error < 0)
-        setLED(ORANGE);
+      if (error > 0) setLED(PINK);
+      else if (error < 0) setLED(ORANGE);
       break;
     }
+
+    /*
+      State: REVERSE
+      Called if obstacle is closer than minimum distance. 
+      Reverse with beeping sound to the set obstacle_distance
+      Sets state FOLLOW which will reassess whether to continue to FOLLOW the wall, or AVOID object
+    */
 
     case REVERSE: 
       setLED(RED);
