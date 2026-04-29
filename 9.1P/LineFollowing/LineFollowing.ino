@@ -7,26 +7,21 @@ MeLineFollower lineFinder(10);
 MeRGBLed LEDs(0, 12);
 
 const int LED_PIN = 3; 
-const int SPEED = 60;
-const float CALIBRATION = 0.9;
+const int SPEED = 100;
+const float CALIBRATION = 0.8;
 
-const float TURN_SCALE = 0.13;
-const float TURN_MIN = 0.1;
-const float TURN_MAX = 0.02;
-const float RAMP_TIME = 1500;
-unsigned long turn_start = 0;
+const float TURN_SCALE = 0.05;
 unsigned long stop_search = 1500;
-unsigned long searching_for_line = 0;
 float scaler = 1.0;
 
+/* Time outs for serial.prints */
 unsigned long last_print_time = 0;
-unsigned long last_find_print = 0; 
-unsigned long print_cooldown = 1000; 
 
 enum RobotState { STRAIGHT, LEFT, RIGHT, STOP };
-enum LEDState { NONE, L_RED, L_BLUE, L_PURPLE, L_GREEN, L_YELLOW };
 enum SensorState { ON_LINE, RIGHT_OUT, LEFT_OUT, OFF_LINE };
-RobotState mBot_state = STRAIGHT; 
+enum LEDState { NONE, L_RED, L_BLUE, L_PURPLE, L_GREEN, L_YELLOW };
+
+RobotState mBot_state = STRAIGHT;
 LEDState led_colour = L_RED;
 SensorState sensor_state = OFF_LINE;
 
@@ -40,17 +35,16 @@ void isr_process_encoder2(void){
   else motor_r.pulsePosPlus();
 }
 
-void _delay(float seconds){
-  if (seconds < 0.0) seconds = 0.0;
-  long endTime = millis() + seconds * 1000;
-  while (millis() < endTime) _loop();
-}
-
 void _loop(){
   motor_l.loop();
   motor_r.loop();
 }
 
+/*
+  The next four functions are purely for debugging/logging
+  stateName, ledName, sensorState return string value of enums
+  printDetails prints current state to the terminal 
+*/
 const char* stateName(){
   switch(mBot_state){
     case STRAIGHT: return "STRAIGHT";
@@ -60,13 +54,13 @@ const char* stateName(){
     default: return "UNKNOWN";
   }
 }
-
 const char* ledName(){
   switch(led_colour){
     case L_RED: return "RED";
     case L_BLUE: return "BLUE";
     case L_PURPLE: return "PURPLE";
     case L_GREEN: return "GREEN";
+    case L_YELLOW: return "YELLOW";
     default: return "NONE";
   }
 }
@@ -79,63 +73,89 @@ const char* sensorState(){
     default: return "NONE";
   }
 }
-float calculateScaler(){
-  unsigned long now = millis() - turn_start;
-  float time = now / RAMP_TIME;
-  if (time > 1.0) time = 1.0;
-  
-  return TURN_MIN + time * (TURN_MAX - TURN_MIN);
+void printDetails(){
+  Serial.print("Sensor "); Serial.print(sensor_state); Serial.print(": "); Serial.println(sensorState());
+  Serial.print("State "); Serial.print(mBot_state); Serial.print(": "); Serial.print(stateName());
+  Serial.print("\t\tScaler: "); Serial.println(scaler);
+  Serial.print("LED: "); Serial.println(ledName());
+  Serial.println();
 }
 
+/*
+  moveBot powers motors, if a scale multiplier is greater than 1
+  it will apply it to the current states respective wheel.   
+*/
 void moveBot(float scale){
   int leftMotor = SPEED * CALIBRATION;
   int rightMotor = SPEED; 
   
-  if (mBot_state == LEFT) rightMotor *= scale; 
-  else if (mBot_state == RIGHT) leftMotor *= scale;
+  if (mBot_state == LEFT) leftMotor *= scale; 
+  else if (mBot_state == RIGHT) rightMotor *= scale;
   
   motor_l.setMotorPwm(leftMotor);
   motor_r.setMotorPwm(-rightMotor);
 }
 
+/*
+  findLine attempts to find the line again if both sensors have lost it. 
+  First continues on the current state turn trajectory in the event it wasn't turning enough 
+  If after `stop_search` time has elapsed it hasn't found the line, will turn the opposite 
+  direction for `stop_search * 2` time.
+  If the line gets found, continues on; else mBot_state is updated to STOP 
+*/
 void findLine(){
   Serial.println("Searching....");
-  searching_for_line = millis();
-  turn_start = searching_for_line;
+  printDetails();
+  bool reversed = false; // false if mBot has only searched in a single direction, true if it's reversed it's direction
+  unsigned long searching_for_line = millis(); // to maintain a fixed search time within the loop
 
-  RobotState search_dir = mBot_state;
-  unsigned long time_limit = stop_search;
-  bool flipped = false;
-
+  // While the line is undetected or timer has elapsed, keep loop active
   while((SensorState)lineFinder.readSensors() == OFF_LINE){
     _loop();
     unsigned long now = millis();
     unsigned long elapsed = now - searching_for_line;
+    // time_limit for the reversed search is double that of the initial search
+    unsigned long time_limit = reversed ? stop_search * 2 : stop_search;
 
-    mBot_state = search_dir;
-    moveBot(calculateScaler());
-    printTime(500, "Time: ", elapsed);
+    moveBot(TURN_SCALE);
 
+    /* 
+      if the search time has elapsed for the inital search the if block is entered turning the
+      search in the opposite direction.
+      On it's first entry the time_limit gets multipled by 2 and reversed boolean is set to true
+    */
     if (elapsed >= time_limit){
-      if (flipped){
+      // was not able to find the line after the second search, set state as STOP, return to main loop
+      if (reversed){
         Serial.println("Can't locate line. Stopping");
         mBot_state = STOP;
         return;
       }
       Serial.println("\n== Switching search direction ==\n");
-      search_dir = mBot_state == LEFT ? RIGHT : LEFT;
+      mBot_state = mBot_state == LEFT ? RIGHT : LEFT; // flip the direction 
       searching_for_line = millis();
-      turn_start = searching_for_line;
-      time_limit = stop_search * 2;
-      flipped = true;
+      reversed = true;
+      printDetails(); 
     }
   }
-  mBot_state = search_dir;
+  Serial.println("Exiting findLine");
+  printDetails();
+  Serial.println("============");
 }
 
 void stopBot(){
   motor_l.setMotorPwm(0);
   motor_r.setMotorPwm(0);
+}
+
+/*
+  Handles updating state of the robot, assigning the LED colour and adding a scale multiplier.
+*/
+void updateState(RobotState state, LEDState led){
+  mBot_state = state;
+  led_colour = led; 
+  scaler = state == STRAIGHT ? 1.0 : TURN_SCALE;
+  printDetails();
 }
 
 void setLED(){
@@ -154,13 +174,6 @@ void setLED(){
   LEDs.show();
 }
 
-void printDetails(){
-  Serial.print("Sensor "); Serial.print(sensor_state); Serial.print(": "); Serial.println(sensorState());
-  Serial.print("State "); Serial.print(mBot_state); Serial.print(": "); Serial.print(stateName());
-  Serial.print("\t\tScaler: "); Serial.println(scaler);
-  Serial.print("LED: "); Serial.println(ledName());
-  Serial.println();
-}
 void setup() {
   Serial.begin(115200);
   
@@ -175,41 +188,36 @@ void setup() {
   LEDs.show(); 
 }
 
-void printTime(int cooldown, const char* str, unsigned long time){
-  unsigned long now = millis();
-  if (now - last_print_time >= cooldown){
-    last_print_time = now;
-    Serial.print(str); Serial.println(time);
-  } 
-}
 void loop() {
   _loop(); 
 
   sensor_state = (SensorState)lineFinder.readSensors(); 
+  
+  // This if block is triggered after findLine has unsuccesfully found the line
   if(sensor_state == OFF_LINE && mBot_state == STOP){
     led_colour = L_RED;
     setLED();
     stopBot();
     return;
   }
+
+  // The if statements in each case were only implemented to make it easier to read terminal logs
   switch(sensor_state){
     case ON_LINE:
-      mBot_state = STRAIGHT; 
-      led_colour = L_GREEN; 
-      scaler = 1.0;
+      if (mBot_state != STRAIGHT)
+        updateState(STRAIGHT, L_GREEN);
       break;
+
     case RIGHT_OUT:
-      if (mBot_state != RIGHT) turn_start = millis();
-      mBot_state = RIGHT;
-      led_colour = L_BLUE; 
-      scaler = TURN_SCALE;
+      if (mBot_state != LEFT)
+        updateState(LEFT, L_BLUE);
       break;
+
     case LEFT_OUT:
-      if (mBot_state != LEFT) turn_start = millis();
-      mBot_state = LEFT;
-      led_colour = L_PURPLE; 
-      scaler = TURN_SCALE;
+      if (mBot_state != RIGHT)
+        updateState(RIGHT, L_PURPLE);
       break;
+
     case OFF_LINE:
       led_colour = L_YELLOW;
       setLED();
@@ -219,10 +227,4 @@ void loop() {
   
   moveBot(scaler);
   setLED();
-
-  unsigned long now = millis();
-  if (now - last_print_time >= print_cooldown){
-    last_print_time = now;
-    printDetails();
-  }
 }
