@@ -15,11 +15,12 @@ const float OBSTACLE_SETPOINT = 10.0;
 const float TURN_SCALE = 0.05;
 unsigned long stop_search = 1500;
 float scaler = 1.0;
+bool obstacle_recover = false; 
 
 /* Time outs for serial.prints */
 unsigned long last_print_time = 0;
 
-enum RobotState { STRAIGHT, LEFT, RIGHT, STOP};
+enum RobotState { STRAIGHT, LEFT, RIGHT, STOP, AVOID };
 enum SensorState { ON_LINE, RIGHT_OUT, LEFT_OUT, OFF_LINE };
 enum LEDState { NONE, L_RED, L_BLUE, L_PURPLE, L_GREEN, L_YELLOW };
 
@@ -150,6 +151,10 @@ void findLine(){
   Serial.println("Exiting findLine");
   printDetails();
   Serial.println("============");
+}
+
+void avoidObstacle(){
+
 }
 
 void stopBot(){
