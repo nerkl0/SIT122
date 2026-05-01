@@ -9,23 +9,19 @@ MeRGBLed LEDs(0, 12);
 
 const int LED_PIN = 3; 
 const int SPEED = 100;
+const int TURN_SPEED = 80;
 const float CALIBRATION = 0.8;
 
-const float OBSTACLE_SETPOINT = 10.0; 
+const float OBSTACLE_SETPOINT = 23.0; 
 const float TURN_SCALE = 0.05;
-unsigned long stop_search = 1500;
+unsigned long stop_search = 2000;
 float scaler = 1.0;
-bool obstacle_recover = false; 
-
-/* Time outs for serial.prints */
-unsigned long last_print_time = 0;
 
 enum RobotState { STRAIGHT, LEFT, RIGHT, STOP, AVOID };
 enum SensorState { ON_LINE, RIGHT_OUT, LEFT_OUT, OFF_LINE };
-enum LEDState { NONE, L_RED, L_BLUE, L_PURPLE, L_GREEN, L_YELLOW };
+enum LEDState { L_GREEN, L_RED, L_BLUE, L_PURPLE, L_YELLOW };
 
 RobotState mBot_state = STRAIGHT;
-LEDState led_colour = L_RED;
 SensorState sensor_state = OFF_LINE;
 
 void isr_process_encoder1(void){
@@ -42,6 +38,11 @@ void _loop(){
   motor_l.loop();
   motor_r.loop();
 }
+void _delay(float seconds){
+  if (seconds < 0.0) seconds = 0.0;
+  long endTime = millis() + seconds * 1000;
+  while (millis() < endTime) _loop();
+}
 
 /*
   The next four functions are purely for debugging/logging
@@ -54,17 +55,8 @@ const char* stateName(){
     case LEFT: return "LEFT";
     case RIGHT:return "RIGHT";
     case STOP: return "STOP";
+    case AVOID: return "AVOID";
     default: return "UNKNOWN";
-  }
-}
-const char* ledName(){
-  switch(led_colour){
-    case L_RED: return "RED";
-    case L_BLUE: return "BLUE";
-    case L_PURPLE: return "PURPLE";
-    case L_GREEN: return "GREEN";
-    case L_YELLOW: return "YELLOW";
-    default: return "NONE";
   }
 }
 const char* sensorState(){
@@ -80,7 +72,6 @@ void printDetails(){
   Serial.print("Sensor "); Serial.print(sensor_state); Serial.print(": "); Serial.println(sensorState());
   Serial.print("State "); Serial.print(mBot_state); Serial.print(": "); Serial.print(stateName());
   Serial.print("\t\tScaler: "); Serial.println(scaler);
-  Serial.print("LED: "); Serial.println(ledName());
   Serial.println();
 }
 
@@ -101,60 +92,53 @@ void moveBot(int speed, float scale){
 
 /*
   findLine attempts to find the line again if both sensors have lost it. 
-  First continues on the current state turn trajectory in the event it wasn't turning enough 
+  First continues on the current state turn trajectory in the event it didn't turn hard enough 
   If after `stop_search` time has elapsed it hasn't found the line, will turn the opposite 
   direction for `stop_search * 2` time.
   If the line gets found, continues on; else mBot_state is updated to STOP 
 */
 void findLine(){
-  led_colour = L_YELLOW;
-  setLED();
   Serial.println("Searching....");
-  printDetails();
-  bool reversed = false; // false if mBot has only searched in a single direction, true if it's reversed it's direction
-  unsigned long searching_for_line = millis(); // to maintain a fixed search time within the loop
+  setLED(L_YELLOW);
 
-  // While the line is undetected or timer has elapsed, keep loop active
-  while((SensorState)lineFinder.readSensors() == OFF_LINE){
+  // First attempt: turn in the current state direction until sensor is not off line or search timeout
+  unsigned long start = millis();
+  while ((SensorState)lineFinder.readSensors() == OFF_LINE && millis() - start < stop_search){
     _loop();
-
-    // If an obstacle is detected return to main loop to handle 
-    bool obstacle_detected = sensor_front.distanceCm() < OBSTACLE_SETPOINT; 
-    if (obstacle_detected) return;
-
-    unsigned long now = millis();
-    unsigned long elapsed = now - searching_for_line;
-    // time_limit for the reversed search is double that of the initial search
-    unsigned long time_limit = reversed ? stop_search * 2 : stop_search;
-
-    moveBot(SPEED * 0.6, TURN_SCALE);
-
-    /* 
-      if the search time has elapsed for the inital search the if block is entered turning the
-      search in the opposite direction.
-      On it's first entry the time_limit gets multipled by 2 and reversed boolean is set to true
-    */
-    if (elapsed >= time_limit){
-      // was not able to find the line after the second search, set state as STOP, return to main loop
-      if (reversed){
-        Serial.println("Can't locate line. Stopping");
-        mBot_state = STOP;
-        return;
-      }
-      Serial.println("\n== Switching search direction ==\n");
-      mBot_state = mBot_state == LEFT ? RIGHT : LEFT; // flip the direction 
-      searching_for_line = millis();
-      reversed = true;
-      printDetails(); 
-    }
+    moveBot(TURN_SPEED, TURN_SCALE);
   }
-  Serial.println("Exiting findLine");
-  printDetails();
-  Serial.println("============");
+  if ((SensorState)lineFinder.readSensors() != OFF_LINE) // return if the line was found (not timed out)
+    return;
+
+  // Second attempt: flip direction, searching twice as long
+  Serial.println("\n== Switching search direction ==\n");
+  updateState(mBot_state == LEFT ? RIGHT : LEFT, L_YELLOW);
+
+  start = millis();
+  while ((SensorState)lineFinder.readSensors() == OFF_LINE && millis() - start < stop_search * 2){
+    _loop();
+    moveBot(TURN_SPEED, TURN_SCALE);
+  }
+  if ((SensorState)lineFinder.readSensors() != OFF_LINE) 
+    return;
+
+  // To Finish: Search was unsuccesful. Cease movement. 
+  Serial.println("Can't locate line. Stopping");
+  updateState(STOP, L_RED);
 }
 
-void avoidObstacle(){
+/*
+  avoidBot spins the robot in a clockwise direction for 0.7s before calling 
+  findLine() to realign itself
+*/
+void avoidBot(){
+  Serial.println("!! Obstacle Detected !!");
+  motor_l.setMotorPwm(SPEED);
+  motor_r.setMotorPwm(SPEED);
+  _delay(0.7);
 
+  updateState(RIGHT, L_YELLOW);
+  findLine();
 }
 
 void stopBot(){
@@ -162,20 +146,29 @@ void stopBot(){
   motor_r.setMotorPwm(0);
 }
 
-void setLED(){
-  if (led_colour == L_PURPLE)
+void setLED(int colour){
+  if (colour == L_PURPLE)
     LEDs.setColor(LED_PIN,160,32,240);
-  else if (led_colour == L_BLUE)
+  else if (colour == L_BLUE)
     LEDs.setColor(LED_PIN,0,51,255);
-  else if (led_colour == L_RED)
+  else if (colour == L_RED)
     LEDs.setColor(LED_PIN,255,25,0);
-  else if (led_colour == L_GREEN)
+  else if (colour == L_GREEN)
     LEDs.setColor(LED_PIN,0,255,30);
-  else if (led_colour == L_YELLOW)
+  else if (colour == L_YELLOW)
     LEDs.setColor(LED_PIN,255,255,0);
   else 
     LEDs.setColor(LED_PIN,0,0,0);
   LEDs.show();
+}
+
+/*
+  Handles updating state of mBot and LED colour
+*/
+void updateState(int botState, int ledState){
+  mBot_state = (RobotState)botState; 
+  setLED((LEDState)ledState);
+  printDetails();
 }
 
 void setup() {
@@ -194,24 +187,19 @@ void setup() {
 
 void loop() {
   _loop(); 
-
   sensor_state = (SensorState)lineFinder.readSensors(); 
 
-  // If an obstacle is detected, stop and wait for it to be cleared
-  bool obstacle_detected = sensor_front.distanceCm() < OBSTACLE_SETPOINT; 
-  if (obstacle_detected){
-    led_colour = L_RED;
-    mBot_state = STOP;
-    setLED();
+  // This if block is triggered after findLine has unsuccesfully found the line after searching
+  if(sensor_state == OFF_LINE && mBot_state == STOP){
     stopBot();
     return;
   }
 
-  // This if block is triggered after findLine has unsuccesfully found the line
-  if(sensor_state == OFF_LINE && mBot_state == STOP){
-    led_colour = L_RED;
-    setLED();
-    stopBot();
+ // If an obstacle is detected, update state to AVOID to turn in the opposite direction
+  bool obstacle_detected = sensor_front.distanceCm() < OBSTACLE_SETPOINT; 
+  if (obstacle_detected){
+    updateState(AVOID, L_BLUE);
+    avoidBot();
     return;
   }
 
@@ -219,34 +207,29 @@ void loop() {
   switch(sensor_state){
     case ON_LINE:
       if (mBot_state != STRAIGHT){
-        mBot_state = STRAIGHT;
-        led_colour = L_GREEN; 
+        updateState(STRAIGHT, L_GREEN);
         scaler = 1.0; 
       }
       break;
 
     case RIGHT_OUT:
       if (mBot_state != LEFT){
-        mBot_state = LEFT;
-        led_colour = L_BLUE; 
-        scaler = TURN_SCALE; 
+        updateState(LEFT, L_GREEN);
+        scaler = TURN_SCALE;
       }
       break;
 
     case LEFT_OUT:
       if (mBot_state != RIGHT){
-        mBot_state = RIGHT;
-        led_colour = L_PURPLE; 
+        updateState(RIGHT, L_GREEN);
         scaler = TURN_SCALE; 
       }
       break;
 
     case OFF_LINE:
-      mBot_state = SEARCH;
       findLine();
       break;
   }
-  
+
   moveBot(SPEED, scaler);
-  setLED();
 }
